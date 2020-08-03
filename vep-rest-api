@@ -1,0 +1,47 @@
+import requests
+import sys
+import json
+
+#url = "https://rest.ensembl.org/vep/human/hgvs/%s?numbers=true"
+url = 'https://grch37.rest.ensembl.org/vep/human/hgvs/%s?numbers=true'
+
+#'protein_start': 346, 'sift_prediction': 'deleterious', 'impact': 'MODERATE', 'strand': -1, 'cds_start': 1037, 'cdna_end': 1124, 'exon': '8/50', 'gene_symbol_source': 'HGNC', 'cds_end': 1037, 'gene_symbol': 'ABCA4', 'sift_score': 0.01, 'amino_acids': 'K/T'
+
+gnomad_af=['gnomad_eas', 'gnomad_amr', 'gnomad_fin', 'gnomad_afr', 'gnomad_oth', 'gnomad_asj', 'gnomad_sas', 'gnomad_nfe', 'gnomad']
+print('input','variant_id','consequence','exon','impact','HGVSc','HGVSp',','.join(gnomad_af),sep=',')
+for l in sys.stdin:
+    ext=l.strip()
+    gene_name=ext.split(':')[0]
+    s=url % ext
+    r = requests.get(s, headers={ "Content-Type" : "application/json"})
+    if not r.ok: continue
+    decoded = r.json()
+    v=decoded[0]
+    ref,alt,=v['allele_string'].split('/')
+    pos=v['start']
+    chrom=v['seq_region_name']
+    consequence=''
+    frequencies=','.join(['0']*9)
+    impact=''
+    exon=''
+    HGVSc=''
+    HGVSp=''
+    for csq in v['transcript_consequences']:
+        if csq['gene_symbol']==gene_name and csq['variant_allele']==alt:
+            consequence=';'.join(csq['consequence_terms'])
+            impact=csq['impact']
+            exon=csq.get('exon','')
+            transcript_id=csq['transcript_id']
+            if 'cds_start' in csq:
+                HGVSc=transcript_id+':c.'+str(csq['cds_start'])+ref+'>'+alt
+            if 'protein_start' in csq:
+                b1,b2,=csq['amino_acids'].split('/')
+                HGVSp=gene_name+':p.'+b1+str(csq['protein_start'])+b2
+            #print(csq)
+    for cv in v.get('colocated_variants',[]):
+        freq=v['colocated_variants'][0].get('frequencies',dict())
+        if 'frequencies' in cv and alt in cv['frequencies']:
+            frequencies=','.join([str(cv['frequencies'][alt][gaf]) for gaf in gnomad_af])
+    vin=v['input']
+    variant_id='-'.join([str(chrom), str(pos), ref, alt])
+    print(vin,variant_id,consequence,exon,impact,HGVSc,HGVSp,frequencies,sep=',')
